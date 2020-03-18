@@ -10,22 +10,37 @@ from datetime import datetime, timedelta, date
 
 class AccountStatementPayment(Document):
 		
+	def validate(self):
+		total_price = self.sum_total()
+		self.total	= total_price	
+
 	def on_update(self):
-		self.sum_total()
 		doc = frappe.get_doc("Patient statement", self.patient_statement)
-		doc.cumulative_total = self.total
-		doc.save()
+		doc.save()	
 	
 	def sum_total(self):
 		total_price = 0
-		price = 0
-		account_statement = frappe.get_all("Account Statement Payment Item", ["name", "price", "quantity", "net_pay"], filters = {"parent": self.name})
+		requisitions = frappe.get_all("Inventory Requisition", ["name"], filters = {"patient_statement": self.patient_statement, "docstatus": 1})
 
-		for item in account_statement:
-			frappe.msgprint("Account Statement: item {}".format(item))
-			price = item.net_pay			
-			total_price += price	
+		for req in requisitions:
+			products = frappe.get_all("Inventory Item", ["item", "product_name", "quantity"], filters = {"parent": req.name})
+
+			for item in products:
+				product_price = frappe.get_all("Item Price", ["price_list_rate"], filters = {"item_code": item.item})
+
+				for price in product_price:
+					total_price += req.quantity * price.price_list_rate
 		
-		self.total = total_price			
+		devrequisitions = requisitions = frappe.get_all("Return of inventory requisition", ["name"], filters = {"patient_statement": self.patient_statement, "docstatus": 1})
 
-		frappe.msgprint("Account Statement: total price {} sel.total {}".format(total_price, self.total))
+		for devr in devrequisitions:
+			products = frappe.get_all("Inventory Item", ["item", "product_name", "quantity"], filters = {"parent": devr.name})
+
+			for item in products:
+				product_price = frappe.get_all("Item Price", ["price_list_rate"], filters = {"item_code": item.item})
+
+				for price in product_price:
+					total_price -= devr.quantity * price.price_list_rate
+	
+	return total_price
+
